@@ -235,6 +235,56 @@ private slots:
         QCOMPARE(getEtag("foodir/subdir/subsubdir"), initialEtag);
     }
 
+    void testRecursiveDelete()
+    {
+        auto makeEntry = [&](const QByteArray &path) {
+            SyncJournalFileRecord record;
+            record._path = path;
+            _db.setFileRecord(record);
+        };
+
+        QByteArrayList elements;
+        elements
+            << "foo"
+            << "foo/file"
+            << "bar"
+            << "moo"
+            << "moo/file"
+            << "foo%bar"
+            << "foo bla bar/file"
+            << "fo_"
+            << "fo_/file";
+        for (auto elem : elements)
+            makeEntry(elem);
+
+        auto checkElements = [&]() {
+            bool ok = true;
+            for (auto elem : elements) {
+                SyncJournalFileRecord record;
+                _db.getFileRecord(elem, &record);
+                if (!record.isValid()) {
+                    qWarning() << "Missing record: " << elem;
+                    ok = false;
+                }
+            }
+            return ok;
+        };
+
+        _db.deleteFileRecord("moo", true);
+        elements.removeAll("moo");
+        elements.removeAll("moo/file");
+        QVERIFY(checkElements());
+
+        _db.deleteFileRecord("fo_", true);
+        elements.removeAll("fo_");
+        elements.removeAll("fo_/file");
+        QVERIFY(checkElements());
+
+        _db.deleteFileRecord("foo%bar", true);
+        elements.removeAll("foo%bar");
+        QVERIFY(checkElements());
+    }
+
 private:
     SyncJournalDb _db;
 };

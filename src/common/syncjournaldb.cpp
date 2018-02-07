@@ -620,7 +620,7 @@ bool SyncJournalDb::checkConnect()
     }
 
     _deleteFileRecordRecursively.reset(new SqlQuery(_db));
-    if (_deleteFileRecordRecursively->prepare("DELETE FROM metadata WHERE path LIKE(?||'/%')")) {
+    if (_deleteFileRecordRecursively->prepare("DELETE FROM metadata WHERE path LIKE(?||'/%') ESCAPE '\\'")) {
         return sqlFail("prepare _deleteFileRecordRecursively", *_deleteFileRecordRecursively);
     }
 
@@ -996,6 +996,14 @@ bool SyncJournalDb::setFileRecord(const SyncJournalFileRecord &_record)
     }
 }
 
+static QString escapeLikeWildcards(QString pattern)
+{
+    return pattern
+        .replace(QLatin1String("\\"), QLatin1String("\\\\"))
+        .replace(QLatin1String("%"), QLatin1String("\\%"))
+        .replace(QLatin1String("_"), QLatin1String("\\_"));
+}
+
 bool SyncJournalDb::deleteFileRecord(const QString &filename, bool recursively)
 {
     QMutexLocker locker(&_mutex);
@@ -1014,7 +1022,7 @@ bool SyncJournalDb::deleteFileRecord(const QString &filename, bool recursively)
 
         if (recursively) {
             _deleteFileRecordRecursively->reset_and_clear_bindings();
-            _deleteFileRecordRecursively->bindValue(1, filename);
+            _deleteFileRecordRecursively->bindValue(1, escapeLikeWildcards(filename));
             if (!_deleteFileRecordRecursively->exec()) {
                 return false;
             }
@@ -1780,9 +1788,9 @@ void SyncJournalDb::avoidRenamesOnNextSync(const QByteArray &path)
     }
 
     SqlQuery query(_db);
-    query.prepare("UPDATE metadata SET fileid = '', inode = '0' WHERE path == ?1 OR path LIKE(?2||'/%')");
+    query.prepare("UPDATE metadata SET fileid = '', inode = '0' WHERE path == ?1 OR path LIKE(?2||'/%') ESCAPE '\\'");
     query.bindValue(1, path);
-    query.bindValue(2, path);
+    query.bindValue(2, escapeLikeWildcards(path));
     query.exec();
 
     // We also need to remove the ETags so the update phase refreshes the directory paths
