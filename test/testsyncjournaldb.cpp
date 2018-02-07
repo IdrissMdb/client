@@ -183,6 +183,58 @@ private slots:
         QCOMPARE(record.numericFileId(), QByteArray("123456789"));
     }
 
+    void testAvoidReadFromDbOnNextSync()
+    {
+        auto invalidEtag = QByteArray("_invalid_");
+        auto initialEtag = QByteArray("etag");
+        auto makeEntry = [&](const QByteArray &path, int type) {
+            SyncJournalFileRecord record;
+            record._path = path;
+            record._type = type;
+            record._etag = initialEtag;
+            _db.setFileRecord(record);
+        };
+        auto getEtag = [&](const QByteArray &path) {
+            SyncJournalFileRecord record;
+            _db.getFileRecord(path, &record);
+            return record._etag;
+        };
+
+        makeEntry("foodir", 2);
+        makeEntry("otherdir", 2);
+        makeEntry("foodir/file", 0);
+        makeEntry("foodir/subdir", 2);
+        makeEntry("foodir/subdir/file", 0);
+        makeEntry("foodir/otherdir", 2);
+        makeEntry("foodir/subdir/subsubdir", 2);
+        makeEntry("foodir/subdir/subsubdir/file", 0);
+        makeEntry("foodir/subdir/otherdir", 2);
+
+        _db.avoidRenamesOnNextSync(QByteArray("foodir/subdir/subsubdir"));
+
+        // Direct effects of parent directories being set to _invalid_
+        QCOMPARE(getEtag("foodir"), invalidEtag);
+        QCOMPARE(getEtag("foodir/subdir"), invalidEtag);
+        QCOMPARE(getEtag("foodir/subdir/subsubdir"), initialEtag);
+
+        QCOMPARE(getEtag("foodir/file"), initialEtag);
+        QCOMPARE(getEtag("foodir/subdir/file"), initialEtag);
+        QCOMPARE(getEtag("foodir/subdir/subsubdir/file"), initialEtag);
+
+        QCOMPARE(getEtag("otherdir"), initialEtag);
+        QCOMPARE(getEtag("foodir/otherdir"), initialEtag);
+        QCOMPARE(getEtag("foodir/subdir/otherdir"), initialEtag);
+
+        // Indirect effects: setFileRecord() calls filter etags
+        initialEtag = "etag2";
+        makeEntry("foodir", 2);
+        makeEntry("foodir/subdir", 2);
+        makeEntry("foodir/subdir/subsubdir", 2);
+        QCOMPARE(getEtag("foodir"), invalidEtag);
+        QCOMPARE(getEtag("foodir/subdir"), invalidEtag);
+        QCOMPARE(getEtag("foodir/subdir/subsubdir"), initialEtag);
+    }
+
 private:
     SyncJournalDb _db;
 };
